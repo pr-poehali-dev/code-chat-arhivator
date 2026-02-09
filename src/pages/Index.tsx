@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useToast } from '@/hooks/use-toast';
 import Icon from '@/components/ui/icon';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -23,8 +24,10 @@ interface CodeFile {
 }
 
 const LANGUAGES = ['Python', 'JavaScript', 'Java', 'C++', 'Go', 'TypeScript', 'Rust'];
+const API_URL = 'https://functions.poehali.dev/ee865d9a-6dc9-47d4-b082-1fab25c10f60';
 
 export default function Index() {
+  const { toast } = useToast();
   const [messages, setMessages] = useState<Message[]>([
     {
       id: '1',
@@ -34,6 +37,7 @@ export default function Index() {
     }
   ]);
   const [inputValue, setInputValue] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
   const [currentCode, setCurrentCode] = useState(`def hello_world():
     print("Hello, World!")
     return True
@@ -58,8 +62,8 @@ if __name__ == "__main__":
     }
   ]);
 
-  const handleSendMessage = () => {
-    if (!inputValue.trim()) return;
+  const handleSendMessage = async () => {
+    if (!inputValue.trim() || isLoading) return;
 
     const newMessage: Message = {
       id: Date.now().toString(),
@@ -70,16 +74,48 @@ if __name__ == "__main__":
 
     setMessages([...messages, newMessage]);
     setInputValue('');
+    setIsLoading(true);
 
-    setTimeout(() => {
-      const response: Message = {
+    try {
+      const history = messages.map(msg => ({
+        role: msg.role,
+        content: msg.content
+      }));
+
+      const response = await fetch(API_URL, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          message: newMessage.content,
+          history: history
+        })
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Ошибка API');
+      }
+
+      const assistantMessage: Message = {
         id: (Date.now() + 1).toString(),
         role: 'assistant',
-        content: 'Понял запрос. Для работы необходим API ключ Claude.',
+        content: data.message,
         timestamp: new Date()
       };
-      setMessages(prev => [...prev, response]);
-    }, 1000);
+
+      setMessages(prev => [...prev, assistantMessage]);
+    } catch (error) {
+      toast({
+        title: 'Ошибка',
+        description: error instanceof Error ? error.message : 'Не удалось отправить запрос',
+        variant: 'destructive'
+      });
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const formatTime = (date: Date) => {
@@ -228,9 +264,9 @@ if __name__ == "__main__":
             placeholder="Опишите задачу или запрос..."
             className="min-h-[80px] resize-none bg-background"
           />
-          <Button onClick={handleSendMessage} className="w-full">
+          <Button onClick={handleSendMessage} className="w-full" disabled={isLoading}>
             <Icon name="Send" size={16} className="mr-2" />
-            Отправить
+            {isLoading ? 'Отправка...' : 'Отправить'}
           </Button>
         </div>
       </aside>
